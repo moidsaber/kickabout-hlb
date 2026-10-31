@@ -441,10 +441,14 @@ export async function rejoin(gameId: string, signupId: string, actor: { player?:
   });
 }
 
+export const MAX_GUESTS_PER_PLAYER = 3;
+
 export async function addGuest(gameId: string, host: PlayerRow, guestName: string) {
   const name = cleanName(guestName);
   if (!name) throw new HttpError(400, "Guest name required");
-  const { game } = await loadGame(gameId);
+  const { game, signups } = await loadGame(gameId);
+  const activeGuests = signups.filter((s) => s.added_by === host.id && !s.player_id && !s.dropped_at).length;
+  if (activeGuests >= MAX_GUESTS_PER_PLAYER) throw new HttpError(400, `You can bring up to ${MAX_GUESTS_PER_PLAYER} mates`);
   await withLineupDiff(gameId, async () => {
     await ensureSignup(gameId, host.id); // host must be part of the game to bring a guest
     await db()`
@@ -596,6 +600,18 @@ export async function checkRateLimits(rules: RateRule[]): Promise<RateRule | nul
   for (const r of rules) await sql`insert into ai_requests (key) values (${r.key})`;
   if (Math.random() < 0.02) await sql`delete from ai_requests where created_at < now() - interval '2 days'`;
   return null;
+}
+
+/** How many times `key` was recorded in the last `windowMinutes` (without recording). */
+export async function recentHits(key: string, windowMinutes: number) {
+  const [{ n }] = await db()<{ n: number }[]>`
+    select count(*)::int as n from ai_requests
+    where key = ${key} and created_at > now() - make_interval(mins => ${windowMinutes})`;
+  return n;
+}
+
+export async function recordHit(key: string) {
+  await db()`insert into ai_requests (key) values (${key})`;
 }
 
 export async function slotsForGame(gameId: string) {

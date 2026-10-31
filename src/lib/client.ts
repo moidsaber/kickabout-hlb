@@ -3,7 +3,7 @@
 
 export type Me = { id: string; name: string; phone: string | null; weekly: { day: string; start: string; end: string }[]; monzoUsername?: string | null };
 
-const K = { token: "kick.token", me: "kick.me", games: "kick.games", monzo: "kick.monzo" };
+const K = { token: "kick.token", me: "kick.me", games: "kick.games", monzo: "kick.monzo", organiser: "kick.organiser" };
 
 function read<T>(k: string, fallback: T): T {
   try {
@@ -43,15 +43,30 @@ export const store = {
     const next = [{ ...prev, ...g, adminKey: g.adminKey ?? prev?.adminKey }, ...list.filter((x) => x.id !== g.id)].slice(0, 20);
     write(K.games, next);
   },
+  organiserCode: () => read<string | null>(K.organiser, null),
+  setOrganiserCode: (c: string) => write(K.organiser, c),
+  forgetOrganiserCode() {
+    try {
+      localStorage.removeItem(K.organiser);
+    } catch {}
+  },
   monzo: () => read<string>(K.monzo, ""),
   setMonzo: (u: string) => write(K.monzo, u),
 };
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
+}
 
 export async function api<T = unknown>(path: string, opts: { method?: string; body?: unknown; adminKey?: string | null } = {}): Promise<T> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   const token = store.token();
   if (token) headers["x-player-token"] = token;
   if (opts.adminKey) headers["x-admin-key"] = opts.adminKey;
+  const organiser = store.organiserCode();
+  if (organiser) headers["x-organiser-code"] = organiser;
   const res = await fetch(path, {
     method: opts.method ?? (opts.body ? "POST" : "GET"),
     headers,
@@ -59,7 +74,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
     cache: "no-store",
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? `Request failed (${res.status})`);
+  if (!res.ok) throw new ApiError((data as { error?: string }).error ?? `Request failed (${res.status})`, res.status);
   return data as T;
 }
 

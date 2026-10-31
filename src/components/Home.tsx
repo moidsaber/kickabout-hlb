@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, store } from "@/lib/client";
+import { ApiError, api, store } from "@/lib/client";
 import { londonToUtc } from "@/lib/time";
 import { KickoffPicker, MAX_SELECTED } from "./KickoffPicker";
 import { Button, Card, CopyButton, ErrorNote, inputCls } from "./ui";
@@ -19,7 +19,7 @@ export function Home() {
         <h1 className="text-3xl font-bold">⚽ Kickabout</h1>
         <p className="text-slate-600">Sort out 7-a-side without the 200-message WhatsApp thread.</p>
       </header>
-      {created ? <CreatedCard c={created} onAnother={() => setCreated(null)} /> : <CreateGame onCreated={setCreated} />}
+      {created ? <CreatedCard c={created} onAnother={() => setCreated(null)} /> : <OrganiserGate onCreated={setCreated} />}
       {games.length > 0 && (
         <Card title="Your games">
           <ul className="divide-y divide-slate-200">
@@ -74,7 +74,72 @@ function CreatedCard({ c, onAnother }: { c: Created; onAnother: () => void }) {
   );
 }
 
-function CreateGame({ onCreated }: { onCreated: (c: Created) => void }) {
+/** Only people with the organiser code see the create form. Players just use game links. */
+function OrganiserGate({ onCreated }: { onCreated: (c: Created) => void }) {
+  const [state, setState] = useState<"checking" | "locked" | "open">("checking");
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  const verify = async (c: string) => {
+    await api("/api/v1/organiser", { body: { code: c } });
+    store.setOrganiserCode(c);
+    setState("open");
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { required } = await api<{ required: boolean }>("/api/v1/organiser");
+        const saved = store.organiserCode();
+        if (!required) return setState("open");
+        if (!saved) return setState("locked");
+        await verify(saved); // the code may have been changed since
+      } catch {
+        store.forgetOrganiserCode();
+        setState("locked");
+      }
+    })();
+  }, []);
+
+  if (state === "checking") return null;
+  if (state === "open")
+    return (
+      <CreateGame
+        onCreated={onCreated}
+        onLocked={(msg) => {
+          store.forgetOrganiserCode();
+          setErr(msg);
+          setState("locked");
+        }}
+      />
+    );
+  return (
+    <Card title="Start a game">
+      <form
+        className="space-y-3"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setErr(null);
+          try {
+            await verify(code.trim());
+          } catch (e) {
+            setErr((e as Error).message);
+          }
+        }}
+      >
+        <p className="text-sm text-slate-600">Only organisers can start games. Enter the organiser code to unlock this on this phone.</p>
+        <input className={inputCls} type="password" autoComplete="off" autoCapitalize="none" placeholder="Organiser code" value={code} onChange={(e) => setCode(e.target.value)} />
+        <Button type="submit" className="w-full" disabled={!code.trim()}>
+          Unlock
+        </Button>
+        <ErrorNote error={err} />
+        <p className="text-xs text-slate-500">Just playing? You don&apos;t need a code — open the game link from the group chat.</p>
+      </form>
+    </Card>
+  );
+}
+
+function CreateGame({ onCreated, onLocked }: { onCreated: (c: Created) => void; onLocked: (msg: string) => void }) {
   const [title, setTitle] = useState("7-a-side");
   const [location, setLocation] = useState("");
   const [mapsUrl, setMapsUrl] = useState("");
@@ -90,7 +155,16 @@ function CreateGame({ onCreated }: { onCreated: (c: Created) => void }) {
   }, []);
 
   return (
-    <Card title="Organise a game">
+    <Card
+      title="Organise a game"
+      right={
+        store.organiserCode() ? (
+          <button type="button" className="text-xs text-slate-500 underline" onClick={() => onLocked("")}>
+            Lock this phone
+          </button>
+        ) : null
+      }
+    >
       <form
         className="space-y-3"
         onSubmit={async (e) => {
@@ -115,6 +189,8 @@ function CreateGame({ onCreated }: { onCreated: (c: Created) => void }) {
             store.rememberGame({ id: r.id, title, adminKey: r.adminKey });
             onCreated(r);
           } catch (e) {
+            // Code changed or removed on the server: ask for it again
+            if (e instanceof ApiError && (e.status === 403 || e.status === 503)) return onLocked(e.message);
             setErr((e as Error).message);
           } finally {
             setBusy(false);

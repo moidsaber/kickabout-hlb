@@ -1,4 +1,4 @@
-import { body, currentPlayer, handle } from "@/lib/http";
+import { body, currentPlayer, handle, requireOrganiser } from "@/lib/http";
 import { createGame, listGames, type CreateGameInput } from "@/lib/service";
 
 // GET ?upcoming=1 -> recent games (public info only)
@@ -7,7 +7,9 @@ export const GET = handle(async (req) => ({
 }));
 
 // POST CreateGameInput -> {id, adminKey, url, adminUrl}
+// Organisers only: needs the x-organiser-code header (or the bot key).
 export const POST = handle(async (req) => {
+  await requireOrganiser(req);
   const b = await body<CreateGameInput>(req);
   const creator = await currentPlayer(req);
   const { id, adminKey } = await createGame(b, creator);

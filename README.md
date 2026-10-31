@@ -34,6 +34,7 @@ Organise casual 7-a-side games for a loose group of friends: pick a time, fill t
 | Variable | Required | What |
 |---|---|---|
 | `DATABASE_URL` | ✅ | Supabase **transaction pooler** connection string |
+| `ORGANISER_CODE` | ✅ | Secret code needed to start a game (e.g. three random words). Share it only with organisers. **If it isn't set, starting games is locked in production.** |
 | `ANTHROPIC_API_KEY` | ✅* | Claude API key, used only in `/api/v1/parse` (server-side). *Without it the app works and the text box falls back to manual ticking. |
 | `ANTHROPIC_MODEL` | | Override the parser model (default `claude-haiku-5-5`) |
 | `NEXT_PUBLIC_SITE_URL` | | Public URL used in links returned by the API (defaults to the request origin) |
@@ -87,6 +88,13 @@ tests/**                vitest
 - **signups**: one per player (or guest, with `added_by` = host) per game. `created_at` orders responses; `queued_at` is the frozen queue position after confirmation; `dropped_at` / `dropped_while_in` drive promotion and the late-dropout rule.
 - **payments**: amounts paid per player per game. Charges are *computed* from the lineup, so balances = Σ charges − Σ payments across confirmed games.
 - **events**: activity feed ("bumped up from the waitlist", "dropped out", …). **ai_requests**: parser rate limiting.
+
+### Who can start games
+- Starting a game needs the **organiser code** (`ORGANISER_CODE`). On the home page, people without it see an "Enter organiser code" step instead of the create form. Once entered correctly, the browser remembers it ("Lock this phone" forgets it). Players never need it; game links work as before.
+- The setup helpers (`/pitch-times` AI and `/rank-times`) need the code too, so nobody else can spend AI credit through them.
+- Wrong guesses are limited to 10 per network per hour. The comparison ignores case and extra spaces, and takes the same time whether a guess is close or not.
+- To change the code, update `ORGANISER_CODE` in Vercel and redeploy. Every organiser then re-enters the new one.
+- Other spam limits: 3 guests per player per game, and 30 name sign-ins per network per hour. The organiser can drop anyone from a game, and cancelled games are hidden.
 
 ### Abuse protection for the "tell us when you're free" box
 1. **Max 200 characters**, enforced in the text box (with a counter) and again on the server.

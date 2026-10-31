@@ -1,4 +1,4 @@
-import { body, handle, requirePlayer } from "@/lib/http";
+import { body, clientIp, handle, requirePlayer } from "@/lib/http";
 import { parseAvailability } from "@/lib/parse";
 import { MAX_TEXT, OFF_TOPIC_MESSAGE, looksLikeAvailability } from "@/lib/parse-core";
 import { HttpError, checkRateLimits, slotsForGame } from "@/lib/service";
@@ -18,7 +18,7 @@ export const POST = handle(async (req) => {
   // Free pre-check: obviously off-topic text never reaches the AI.
   if (!looksLikeAvailability(text)) return { ok: false, offTopic: true, message: OFF_TOPIC_MESSAGE };
 
-  const ip = req.headers.get("x-real-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+  const ip = clientIp(req);
   const blocked = await checkRateLimits([
     { key: `player:${player.id}`, limit: 10, windowMinutes: 60, label: "You've hit the limit (10 an hour)" },
     // New names are free to create, so also limit per device/network...
