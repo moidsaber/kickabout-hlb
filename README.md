@@ -129,6 +129,17 @@ Auth: players send `x-player-token`; organiser endpoints take `x-admin-key` (or 
 
 Phase 2 sketch: a small Node process (Baileys / whatsapp-web.js) maps `!newgame` → `POST /games`, `!games` → `GET /games?upcoming=1`, `!owe` → `GET /balances`, forwards free-text messages to `/parse` and then `/availability` (with `x-bot-key` + the sender's phone), and polls `GET /games?upcoming=1` to post reminders 24h/3h before `kickoff` plus payment reminders using `src/lib/whatsapp.ts`.
 
+## Troubleshooting: requests hang or "took too long"
+1. Run `npm run db:check`. It uses the app's exact database settings, tests a few small queries one step at a time, and lists any **stuck database sessions** (open transactions, or queries waiting on a lock for over 30s).
+2. If it lists stuck sessions, clear them in the Supabase **SQL Editor**, using the pids it printed:
+   ```sql
+   select pg_terminate_backend(pid) from pg_stat_activity where pid in (123, 456);
+   ```
+   Or restart the database from the Supabase dashboard (Project Settings → General → Restart project).
+3. If "connect + select 1" fails, check the project isn't paused and that `DATABASE_URL` is the **transaction pooler** string (port 6543).
+
+How the app avoids hangs: one query at a time per connection (postgres.js v4 would otherwise pipeline up to 100 per connection), at most 3 connections, no array parameters, a 15s queue timeout, and a time limit on every API request (25s, or 50s for AI). When a request times out, the app drops its database connections and reconnects, so it recovers without a restart.
+
 ## Choices & limitations
 - **No accounts, by design.** Entering an existing name on a new phone "logs you in" as that player, which suits a friends group but isn't secure. The organiser's power lives only in the secret admin link.
 - **Guests play when their host is available** (they're "coming with" the host).

@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest } from "next/server";
 import { HttpError, playerByPhone, playerByToken, recentHits, recordHit } from "./service";
+import { resetDb } from "./db";
 
 export type Ctx = { params: Promise<{ id: string }> };
 
@@ -15,7 +16,8 @@ export function handle<C>(fn: (req: NextRequest, ctx: C) => Promise<unknown>, op
     try {
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
-          console.error(`Timed out after ${limit / 1000}s: ${req.method} ${req.nextUrl.pathname}`);
+          console.error(`Timed out after ${limit / 1000}s: ${req.method} ${req.nextUrl.pathname} — resetting database connections`);
+          resetDb(); // drop whatever is stuck so the next request starts clean
           reject(new HttpError(504, "The server took too long to respond — please try again."));
         }, limit);
       });

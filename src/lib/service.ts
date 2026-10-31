@@ -174,18 +174,19 @@ export async function createGame(input: CreateGameInput, creator: PlayerRow | nu
 async function loadGames(ids: string[]) {
   if (!ids.length) return [];
   const sql = db();
-  const games = await sql<GameRow[]>`select * from games where id = any(${ids})`;
-  const [slots, signups, avail] = await Promise.all([
-    sql<SlotRow[]>`select * from slots where game_id = any(${ids}) order by starts_at`,
-    sql<SignupRow[]>`
-      select s.*, p.name as player_name, p.skill as player_skill, p.phone, h.name as host_name
-      from signups s
-      left join players p on p.id = s.player_id
-      left join players h on h.id = s.added_by
-      where s.game_id = any(${ids}) order by s.created_at`,
-    sql<{ game_id: string; slot_id: string; player_id: string }[]>`
-      select game_id, slot_id, player_id from availability where game_id = any(${ids}) and available`,
-  ]);
+  // IDs go over as one comma-separated text value (no array parameters), and the
+  // queries run one after another: simple and reliable through a pooler.
+  const csv = ids.join(",");
+  const games = await sql<GameRow[]>`select * from games where id = any(string_to_array(${csv}, ','))`;
+  const slots = await sql<SlotRow[]>`select * from slots where game_id = any(string_to_array(${csv}, ',')) order by starts_at`;
+  const signups = await sql<SignupRow[]>`
+    select s.*, p.name as player_name, p.skill as player_skill, p.phone, h.name as host_name
+    from signups s
+    left join players p on p.id = s.player_id
+    left join players h on h.id = s.added_by
+    where s.game_id = any(string_to_array(${csv}, ',')) order by s.created_at`;
+  const avail = await sql<{ game_id: string; slot_id: string; player_id: string }[]>`
+    select game_id, slot_id, player_id from availability where game_id = any(string_to_array(${csv}, ',')) and available`;
   return games.map((game) => ({
     game,
     slots: slots.filter((x) => x.game_id === game.id),
@@ -487,7 +488,7 @@ export async function confirmSlot(gameId: string, slotId: string) {
       update games set status = 'confirmed', confirmed_slot_id = ${slotId} where id = ${gameId}
     )
     update signups
-    set queued_at = case when id = any(${queued}::uuid[]) then created_at else null end
+    set queued_at = case when id::text = any(string_to_array(${queued.join(",")}, ',')) then created_at else null end
     where game_id = ${gameId}`;
   await logEvent(gameId, "confirmed", `✅ Confirmed for ${formatSlot(slot.starts_at)}`);
 }
