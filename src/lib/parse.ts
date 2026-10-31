@@ -2,7 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { ParsedAvailability, buildParsePrompt, normaliseParsed, type ParseSlot } from "./parse-core";
-import { PitchTimes, buildPitchPrompt, normalisePitch } from "./pitch-core";
+import { PitchPattern, buildPitchPrompt, expandPitch } from "./pitch-core";
 
 export const PARSE_MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-5-5";
 
@@ -42,9 +42,9 @@ export async function parsePitchTimes(input: { text: string; now?: Date; anthrop
     max_tokens: 2000,
     system,
     messages: [{ role: "user", content: user }],
-    output_config: { effort: "low", format: zodOutputFormat(PitchTimes) },
+    output_config: { effort: "low", format: zodOutputFormat(PitchPattern) },
   });
   if (res.stop_reason === "refusal") throw new Error("Model declined the request");
   if (!res.parsed_output) throw new Error(`No structured output (stop_reason=${res.stop_reason})`);
-  return normalisePitch(res.parsed_output, now);
+  return expandPitch(res.parsed_output, now);
 }

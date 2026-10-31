@@ -1,21 +1,24 @@
 "use client";
-// Game setup: choose candidate kick-off times either by tapping days + times
-// (no AI) or by describing when the pitch is free (AI). Both produce a list that
-// is ranked by how many regulars are usually free; the best 3 are pre-selected.
-import { useEffect, useMemo, useState } from "react";
+// Game setup: choose candidate kick-off times either by tapping weekdays + times
+// over the next few weeks (no AI) or by describing when the pitch is free (AI).
+// Nothing is ticked automatically: the host picks, optionally using the
+// "Tick the 3 most popular" shortcut based on regulars' usual weeks.
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import { MAX_TEXT } from "@/lib/limits";
 import { combineDaysTimes, nextDays, pickBest } from "@/lib/logic";
-import { formatSlot, londonToUtc, type Day } from "@/lib/time";
+import { DAYS, DAY_LABEL, formatSlot, londonToUtc, type Day } from "@/lib/time";
 import { Button, ErrorNote, inputCls } from "./ui";
 
 type Cand = { local: string; startsAt: string };
 type Mode = "pick" | "describe";
+type Weeks = 1 | 2 | 4;
 export const MAX_SELECTED = 6;
+const COLLAPSED_ROWS = 10;
 const PREFS_KEY = "kick.pitch";
 const uniq = (xs: string[]) => [...new Set(xs)];
 
-type Prefs = { mode: Mode; weekdays: Day[]; times: string[]; text: string };
+type Prefs = { mode: Mode; weekdays: Day[]; weeks: Weeks; times: string[]; text: string };
 function loadPrefs(): Partial<Prefs> {
   try {
     return JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
@@ -31,59 +34,65 @@ function savePrefs(p: Prefs) {
 
 export function KickoffPicker({ selected, onChange }: { selected: string[]; onChange: (s: string[]) => void }) {
   const [now] = useState(() => new Date());
-  const days = useMemo(() => nextDays(now, 7), [now]);
   const [mode, setMode] = useState<Mode>("pick");
-  const [pickDates, setPickDates] = useState<string[]>(() => days.map((d) => d.date));
+  const [weekdays, setWeekdays] = useState<Day[]>([...DAYS]);
+  const [weeks, setWeeks] = useState<Weeks>(4);
   const [times, setTimes] = useState<string[]>(["19:00"]);
   const [text, setText] = useState("");
-  const [ai, setAi] = useState<{ times: Cand[]; notes: string } | null>(null);
+  const [ai, setAi] = useState<{ times: Cand[]; notes: string; truncated: boolean } | null>(null);
   const [aiErr, setAiErr] = useState<string | null>(null);
   const [extras, setExtras] = useState<string[]>([]);
   const [extraInput, setExtraInput] = useState("");
   const [scores, setScores] = useState<Record<string, number>>({});
-  const [regulars, setRegulars] = useState<number | null>(null);
+  const [regulars, setRegulars] = useState(0);
+  const [showAll, setShowAll] = useState(false);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const selectedRef = useRef(selected);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
 
   // Remember how this organiser usually describes their pitch
   useEffect(() => {
     const p = loadPrefs();
     if (p.mode) setMode(p.mode);
-    if (p.weekdays?.length) setPickDates(days.filter((d) => p.weekdays!.includes(d.day)).map((d) => d.date));
+    if (p.weekdays?.length) setWeekdays(p.weekdays);
+    if (p.weeks) setWeeks(p.weeks);
     if (p.times?.length) setTimes(p.times);
     if (p.text) setText(p.text);
     setPrefsLoaded(true);
-  }, [days]);
+  }, []);
   useEffect(() => {
-    if (!prefsLoaded) return;
-    savePrefs({ mode, weekdays: days.filter((d) => pickDates.includes(d.date)).map((d) => d.day), times, text });
-  }, [prefsLoaded, mode, pickDates, times, text, days]);
+    if (prefsLoaded) savePrefs({ mode, weekdays, weeks, times, text });
+  }, [prefsLoaded, mode, weekdays, weeks, times, text]);
 
-  const cands: Cand[] = useMemo(
-    () => (mode === "pick" ? combineDaysTimes(pickDates, times, now) : (ai?.times ?? [])),
-    [mode, pickDates, times, now, ai],
-  );
+  const cands: Cand[] = useMemo(() => {
+    if (mode === "describe") return ai?.times ?? [];
+    const dates = nextDays(now, weeks * 7).filter((d) => weekdays.includes(d.day)).map((d) => d.date);
+    return combineDaysTimes(dates, times, now);
+  }, [mode, ai, now, weeks, weekdays, times]);
   const candKey = cands.map((c) => c.local).join(",");
 
-  // Rank the generated times and pre-select the best 3 whenever the list changes
+  // When the list changes: drop ticks that are no longer offered, and fetch
+  // "usually free" counts (information only — nothing is ticked automatically).
   useEffect(() => {
+    const offered = new Set(cands.map((c) => c.local));
+    const kept = selectedRef.current.filter((s) => offered.has(s) || extras.includes(s));
+    if (kept.length !== selectedRef.current.length) onChange(kept);
+    setShowAll(false);
+    if (!cands.length) return;
     let cancelled = false;
     const t = setTimeout(async () => {
-      if (!cands.length) {
-        onChange(extras);
-        return;
-      }
       try {
         const r = await api<{ regulars: number; scores: { startsAt: string; available: number }[] }>("/api/v1/rank-times", {
           body: { times: cands.map((c) => c.startsAt) },
         });
         if (cancelled) return;
         const byStart = new Map(r.scores.map((s) => [s.startsAt, s.available]));
-        const ranked = cands.map((c) => ({ ...c, available: byStart.get(c.startsAt) ?? 0 }));
-        setScores(Object.fromEntries(ranked.map((c) => [c.local, c.available])));
+        setScores(Object.fromEntries(cands.map((c) => [c.local, byStart.get(c.startsAt) ?? 0])));
         setRegulars(r.regulars);
-        onChange(uniq([...pickBest(ranked, 3), ...extras]).slice(0, MAX_SELECTED));
       } catch {
-        if (!cancelled) onChange(uniq([...cands.slice(0, 3).map((c) => c.local), ...extras]).slice(0, MAX_SELECTED));
+        if (!cancelled) setRegulars(0);
       }
     }, 250);
     return () => {
@@ -99,25 +108,34 @@ export function KickoffPicker({ selected, onChange }: { selected: string[]; onCh
     else if (selected.length < MAX_SELECTED) onChange([...selected, local]);
   };
 
+  const tickPopular = () => {
+    const best = pickBest(cands.map((c) => ({ ...c, available: scores[c.local] ?? 0 })), 3);
+    onChange(uniq([...best, ...extras.filter((x) => selected.includes(x))]).slice(0, MAX_SELECTED));
+  };
+
   const findTimes = async () => {
     setAiErr(null);
     try {
-      const r = await api<{ ok: boolean; times?: Cand[]; notes?: string; message?: string }>("/api/v1/pitch-times", { body: { text } });
+      const r = await api<{ ok: boolean; times?: Cand[]; notes?: string; truncated?: boolean; message?: string }>("/api/v1/pitch-times", {
+        body: { text },
+      });
       if (!r.ok || !r.times) {
         setAi(null);
         setAiErr(r.message ?? "Couldn't read that — use “Tap to pick” instead.");
         return;
       }
-      setAi({ times: r.times, notes: r.notes ?? "" });
+      setAi({ times: r.times, notes: r.notes ?? "", truncated: !!r.truncated });
     } catch (e) {
       setAiErr((e as Error).message);
     }
   };
 
-  const list = [...cands, ...extras.filter((x) => !cands.some((c) => c.local === x)).map((local) => ({ local, startsAt: londonToUtc(local).toISOString() }))].sort(
-    (a, b) => a.startsAt.localeCompare(b.startsAt),
-  );
-  const setDates = (pred: (d: (typeof days)[number]) => boolean) => setPickDates(days.filter(pred).map((d) => d.date));
+  const list = [
+    ...cands,
+    ...extras.filter((x) => !cands.some((c) => c.local === x)).map((local) => ({ local, startsAt: londonToUtc(local).toISOString() })),
+  ].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  // Collapsed view: first rows, plus anything already ticked further down
+  const visible = showAll ? list : list.filter((c, i) => i < COLLAPSED_ROWS || selected.includes(c.local));
 
   return (
     <div className="space-y-3">
@@ -142,40 +160,51 @@ export function KickoffPicker({ selected, onChange }: { selected: string[]; onCh
         <div className="space-y-3">
           <div>
             <div className="grid grid-cols-7 gap-1">
-              {days.map((d) => {
-                const on = pickDates.includes(d.date);
+              {DAYS.map((d) => {
+                const on = weekdays.includes(d);
                 return (
                   <button
-                    key={d.date}
+                    key={d}
                     type="button"
                     aria-pressed={on}
-                    onClick={() => setPickDates(on ? pickDates.filter((x) => x !== d.date) : [...pickDates, d.date])}
-                    className={`flex flex-col items-center rounded-lg py-1.5 text-xs ring-1 ${on ? "bg-emerald-600 text-white ring-emerald-600" : "bg-white text-slate-700 ring-slate-200"}`}
+                    onClick={() => setWeekdays(on ? weekdays.filter((x) => x !== d) : [...weekdays, d])}
+                    className={`rounded-lg py-2 text-xs font-semibold ring-1 ${on ? "bg-emerald-600 text-white ring-emerald-600" : "bg-white text-slate-700 ring-slate-200"}`}
                   >
-                    <span className="font-semibold">{d.label.split(" ")[0]}</span>
-                    <span>{d.label.split(" ")[1]}</span>
+                    {DAY_LABEL[d]}
                   </button>
                 );
               })}
             </div>
             <div className="mt-1 flex flex-wrap gap-x-3 text-xs">
-              <Button variant="ghost" onClick={() => setDates(() => true)}>Every day</Button>
-              <Button variant="ghost" onClick={() => setDates((d) => !["sat", "sun"].includes(d.day))}>Weekdays</Button>
-              <Button variant="ghost" onClick={() => setDates((d) => ["sat", "sun"].includes(d.day))}>Weekend</Button>
-              <Button variant="ghost" onClick={() => setPickDates([])}>Clear</Button>
+              <Button variant="ghost" onClick={() => setWeekdays([...DAYS])}>Every day</Button>
+              <Button variant="ghost" onClick={() => setWeekdays(["mon", "tue", "wed", "thu", "fri"])}>Weekdays</Button>
+              <Button variant="ghost" onClick={() => setWeekdays(["sat", "sun"])}>Weekend</Button>
+              <Button variant="ghost" onClick={() => setWeekdays([])}>Clear</Button>
             </div>
           </div>
+
+          <div>
+            <p className="mb-1 text-xs text-slate-500">Over the next</p>
+            <div className="grid grid-cols-3 rounded-xl bg-slate-100 p-1 text-sm">
+              {([1, 2, 4] as Weeks[]).map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  aria-pressed={weeks === w}
+                  onClick={() => setWeeks(w)}
+                  className={`min-h-9 rounded-lg ${weeks === w ? "bg-white font-medium shadow-sm" : "text-slate-500"}`}
+                >
+                  {w === 1 ? "1 week" : `${w} weeks`}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-2">
             <p className="text-xs text-slate-500">Kick-off time{times.length > 1 ? "s" : ""}</p>
             {times.map((t, i) => (
               <div key={i} className="flex gap-2">
-                <input
-                  type="time"
-                  step={900}
-                  className={inputCls}
-                  value={t}
-                  onChange={(e) => setTimes(times.map((x, j) => (j === i ? e.target.value : x)))}
-                />
+                <input type="time" step={900} className={inputCls} value={t} onChange={(e) => setTimes(times.map((x, j) => (j === i ? e.target.value : x)))} />
                 {times.length > 1 && (
                   <Button variant="secondary" onClick={() => setTimes(times.filter((_, j) => j !== i))}>
                     ✕
@@ -205,20 +234,31 @@ export function KickoffPicker({ selected, onChange }: { selected: string[]; onCh
           <Button variant="secondary" className="w-full" disabled={!text.trim()} onClick={findTimes}>
             Find times
           </Button>
-          {ai?.notes && <p className="rounded-lg bg-sky-50 p-2 text-sm ring-1 ring-sky-200">🤖 {ai.notes}</p>}
+          <p className="text-xs text-slate-500">Looks at the next 30 days unless you say otherwise (e.g. “next month”, “next 2 weeks”).</p>
+          {ai?.notes && (
+            <p className="rounded-lg bg-sky-50 p-2 text-sm ring-1 ring-sky-200">
+              🤖 {ai.notes}
+              {ai.truncated && " (Showing the first 60 times.)"}
+            </p>
+          )}
           <ErrorNote error={aiErr} />
         </div>
       )}
 
       {list.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs text-slate-500">
-            {regulars
-              ? `We've ticked the times most regulars are usually free. Tap to change (up to ${MAX_SELECTED}).`
-              : `Tap the times to offer (up to ${MAX_SELECTED}).`}
-          </p>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-slate-500">
+              {list.length} possible time{list.length === 1 ? "" : "s"} · <strong className="text-slate-700">{selected.length}</strong> of up to {MAX_SELECTED} chosen
+            </p>
+            {regulars > 0 && (
+              <button type="button" onClick={tickPopular} className="shrink-0 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200">
+                ✨ Tick the 3 most popular
+              </button>
+            )}
+          </div>
           <ul className="divide-y divide-slate-200 rounded-xl ring-1 ring-slate-200">
-            {list.map((c) => {
+            {visible.map((c) => {
               const on = selected.includes(c.local);
               const isExtra = extras.includes(c.local);
               return (
@@ -234,7 +274,7 @@ export function KickoffPicker({ selected, onChange }: { selected: string[]; onCh
                       {on ? "✓" : ""}
                     </span>
                     <span className="flex-1">{formatSlot(c.startsAt)}</span>
-                    {regulars ? <span className="text-xs text-slate-500">{scores[c.local] ?? 0} usually free</span> : null}
+                    {regulars > 0 && <span className="text-xs text-slate-500">{scores[c.local] ?? 0} usually free</span>}
                   </button>
                   {isExtra && (
                     <button
@@ -253,6 +293,16 @@ export function KickoffPicker({ selected, onChange }: { selected: string[]; onCh
               );
             })}
           </ul>
+          {list.length > visible.length && (
+            <Button variant="ghost" onClick={() => setShowAll(true)}>
+              Show all {list.length} times
+            </Button>
+          )}
+          {showAll && list.length > COLLAPSED_ROWS && (
+            <Button variant="ghost" onClick={() => setShowAll(false)}>
+              Show fewer
+            </Button>
+          )}
         </div>
       )}
       {mode === "pick" && list.length === 0 && <p className="text-sm text-slate-500">Pick at least one day and a time.</p>}

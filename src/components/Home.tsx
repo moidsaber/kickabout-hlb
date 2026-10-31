@@ -225,8 +225,8 @@ function CreateGame({ onCreated, onLocked }: { onCreated: (c: Created) => void; 
         </label>
 
         <KickoffPicker selected={slots} onChange={setSlots} />
-        <Button type="submit" className="w-full" disabled={busy}>
-          {busy ? "Creating…" : `Create game with ${slots.length} time${slots.length === 1 ? "" : "s"}`}
+        <Button type="submit" className="w-full" disabled={busy || slots.length === 0}>
+          {busy ? "Creating…" : slots.length ? `Create game with ${slots.length} time${slots.length === 1 ? "" : "s"}` : "Tick at least one time"}
         </Button>
         <ErrorNote error={err} />
       </form>

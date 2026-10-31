@@ -7,9 +7,9 @@ Organise casual 7-a-side games for a loose group of friends: pick a time, fill t
 ## How it works
 
 1. **Organiser creates a game** on `/`: title, location + Google Maps link, pitch cost, cap (default 14), and 1–6 candidate kick-off times, chosen in one of two ways:
-   - **Tap to pick:** day chips for the next 7 days plus one or more kick-off times. No AI involved.
-   - **Describe it:** e.g. *"p rec pitch is available at 7pm every day except Sunday"*. Claude turns it into concrete times within the next 14 days (default: next 7), with the same abuse protection as the players' box.
-   Either way, the resulting times are ranked by how many recent regulars are usually free (from their saved weeks), and the best 3 are pre-selected. The host can adjust the selection or add a specific date and time. The picker remembers how the host last described the pitch.
+   - **Tap to pick:** weekday chips, a range (next 1, 2 or 4 weeks) and one or more kick-off times. No AI involved.
+   - **Describe it:** e.g. *"p rec pitch is available at 7pm every day except Sunday"*. Claude returns a compact pattern (date range, weekly times, one-off dates, exclusions) that the app expands into concrete times. It covers the next 30 days by default, and "next month", "next 2 weeks" etc. work too. Same abuse protection as the players' box.
+   Nothing is ticked automatically. Each time shows how many recent regulars are usually free, and **✨ Tick the 3 most popular** ticks the best ones on request. The host can also add a specific date and time. The picker remembers how the host last described the pitch.
 2. They get a **share link** (`/g/<id>`) and a **secret organiser link** (`/g/<id>/admin?key=…`), plus a ready-to-paste WhatsApp message.
 3. **Players** enter their name (+ optional phone), remembered in the browser via a localStorage token. They tick slots, or type something like *"after 6 mon-fri, all day saturday, not sunday"*. Claude turns that into ticks (low-confidence guesses get a dashed outline), and the player confirms before anything is saved. Their usual week is stored and pre-fills future games.
 4. **Organiser** sees per-slot counts and a player × slot grid, with the most popular slot highlighted, then confirms a time.

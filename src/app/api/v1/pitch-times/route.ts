@@ -27,7 +27,7 @@ export const POST = handle(async (req) => {
     const r = await parsePitchTimes({ text });
     if (!r.onTopic) return { ok: false, offTopic: true, message: OFF_TOPIC_PITCH_MESSAGE };
     if (!r.times.length) return { ok: false, fallback: true, message: "Couldn't find any upcoming times in that — try “Tap to pick”." };
-    return { ok: true, times: r.times, notes: r.notes };
+    return { ok: true, times: r.times, notes: r.notes, truncated: r.truncated };
   } catch (e) {
     console.error("pitch parse failed", e);
     return { ok: false, fallback: true, message: "Couldn't read that right now — use “Tap to pick” instead." };
