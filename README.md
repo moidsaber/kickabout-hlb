@@ -146,3 +146,5 @@ How the app avoids hangs: one query at a time per connection (postgres.js v4 wou
 - **Queue order is frozen at confirmation.** Anyone who becomes available afterwards joins the back of the queue, so they can't bump people who are already in.
 - Ticking "paid" records payment for this game **plus** earlier unpaid games owed to the same Monzo username. If the price per head later drops, the difference shows as credit.
 - Pages poll every 30s rather than using realtime subscriptions.
+
+<!-- deploy trigger -->
