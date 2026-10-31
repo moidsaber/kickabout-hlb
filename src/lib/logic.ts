@@ -174,3 +174,43 @@ export function pickTeams<T extends { skill: number }>(people: T[], mode: "balan
   }
   return [a, b];
 }
+
+// ---------- kick-off candidates (game setup) ----------
+
+export type DayOption = { date: string; day: Day; label: string; isToday: boolean };
+
+/** The next `n` London calendar days starting today, e.g. {date:"2026-10-31", day:"sat", label:"Sat 31"}. */
+export function nextDays(now: Date, n = 7): DayOption[] {
+  const [y, m, d] = londonDate(now).split("-").map(Number);
+  const out: DayOption[] = [];
+  for (let off = 0; off < n; off++) {
+    const u = new Date(Date.UTC(y, m - 1, d + off, 12)); // calendar arithmetic only
+    const date = u.toISOString().slice(0, 10);
+    const day = DAYS[(u.getUTCDay() + 6) % 7];
+    out.push({ date, day, label: `${DAY_LABEL[day]} ${u.getUTCDate()}`, isToday: off === 0 });
+  }
+  return out;
+}
+
+/** Every chosen date × time, skipping anything starting within 15 minutes. Sorted, de-duplicated. */
+export function combineDaysTimes(dates: string[], times: string[], now: Date) {
+  const seen = new Set<string>();
+  const out: { local: string; startsAt: string }[] = [];
+  for (const date of dates) {
+    for (const time of times) {
+      if (!/^\d{2}:\d{2}$/.test(time)) continue;
+      const local = `${date}T${time}`;
+      if (seen.has(local)) continue;
+      const at = londonToUtc(local);
+      if (at.getTime() < now.getTime() + 15 * 60_000) continue;
+      seen.add(local);
+      out.push({ local, startsAt: at.toISOString() });
+    }
+  }
+  return out.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+}
+
+/** Pick the `n` times most regulars are usually free for (ties -> earliest). */
+export function pickBest<T extends { local: string; available: number }>(cands: T[], n = 3) {
+  return [...cands].sort((a, b) => b.available - a.available || a.local.localeCompare(b.local)).slice(0, n).map((c) => c.local);
+}

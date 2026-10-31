@@ -41,7 +41,7 @@ const AVAILABILITY_WORDS = [
   "morning", "afternoon", "evening", "eve", "night", "lunch", "lunchtime", "noon", "midday", "am", "pm", "oclock", "o'clock",
   // availability words
   "free", "available", "availability", "avail", "busy", "anytime", "whenever", "flexible", "any time", "any day",
-  "none", "both", "either", "slot", "option",
+  "none", "both", "either", "slot", "option", "everyday", "daily", "every",
 ];
 const AVAILABILITY_RE = new RegExp(`\\b(${AVAILABILITY_WORDS.map((w) => w.replace(/ /g, "\\s+")).join("|")})s?\\b|\\d`, "i");
 

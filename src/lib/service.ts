@@ -7,6 +7,7 @@ import {
   isAvailable,
   suggestKickoffs,
   sumByPayer,
+  weeklyCovers,
   type AvailSet,
   type SignupLite,
   type WeeklyWindow,
@@ -558,6 +559,17 @@ export async function balances() {
     return { playerId: p.id, name: p.name, owed, games };
   });
   return out.filter((b) => b.games.length).sort((a, b) => b.owed - a.owed || a.name.localeCompare(b.name));
+}
+
+/** For each candidate kick-off, how many recent regulars are usually free then (from stored usual weeks). */
+export async function rankTimes(startsAts: Date[]) {
+  const rows = await db()<{ weekly: WeeklyWindow[] }[]>`
+    select weekly from players
+    where jsonb_array_length(weekly) > 0 and last_seen_at > now() - interval '90 days'`;
+  return {
+    regulars: rows.length,
+    scores: startsAts.map((d) => ({ startsAt: d.toISOString(), available: rows.filter((r) => weeklyCovers(r.weekly, d)).length })),
+  };
 }
 
 export async function kickoffSuggestions() {

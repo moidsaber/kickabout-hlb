@@ -6,7 +6,10 @@ Organise casual 7-a-side games for a loose group of friends: pick a time, fill t
 
 ## How it works
 
-1. **Organiser creates a game** on `/`: title, location + Google Maps link, pitch cost, cap (default 14) and 2–6 candidate kick-off times. The form suggests the 3 best times from recent players' stored weekly availability.
+1. **Organiser creates a game** on `/`: title, location + Google Maps link, pitch cost, cap (default 14), and 1–6 candidate kick-off times, chosen in one of two ways:
+   - **Tap to pick:** day chips for the next 7 days plus one or more kick-off times. No AI involved.
+   - **Describe it:** e.g. *"p rec pitch is available at 7pm every day except Sunday"*. Claude turns it into concrete times within the next 14 days (default: next 7), with the same abuse protection as the players' box.
+   Either way, the resulting times are ranked by how many recent regulars are usually free (from their saved weeks), and the best 3 are pre-selected. The host can adjust the selection or add a specific date and time. The picker remembers how the host last described the pitch.
 2. They get a **share link** (`/g/<id>`) and a **secret organiser link** (`/g/<id>/admin?key=…`), plus a ready-to-paste WhatsApp message.
 3. **Players** enter their name (+ optional phone), remembered in the browser via a localStorage token. They tick slots, or type something like *"after 6 mon-fri, all day saturday, not sunday"*. Claude turns that into ticks (low-confidence guesses get a dashed outline), and the player confirms before anything is saved. Their usual week is stored and pre-fills future games.
 4. **Organiser** sees per-slot counts and a player × slot grid, with the most popular slot highlighted, then confirms a time.
@@ -66,7 +69,8 @@ CLI alternative: `npx vercel link && npx vercel env add DATABASE_URL && npx verc
 supabase/migrations/0001_init.sql   schema (players, games, slots, signups, availability, payments, events, ai_requests)
 src/lib/logic.ts        pure rules: lineup/waitlist, cost split, late-dropout rule, weekly matching, suggestions, teams
 src/lib/time.ts         Europe/London helpers (BST/GMT-safe)
-src/lib/parse-core.ts   Claude prompt + zod schema (no server deps; reusable by a bot)
+src/lib/parse-core.ts   Claude prompt + zod schema for players' availability (no server deps)
+src/lib/pitch-core.ts   Claude prompt + zod schema for the organiser's pitch description
 src/lib/parse.ts        Claude call (messages.parse + zodOutputFormat), server-only
 src/lib/service.ts      DB operations; every route and a future bot go through these
 src/lib/whatsapp.ts     ready-to-paste message text
@@ -111,7 +115,9 @@ Auth: players send `x-player-token`; organiser endpoints take `x-admin-key` (or 
 | `POST /api/v1/games/:id/skill` | `{signupId, skill}` | admin |
 | `POST /api/v1/games/:id/kit` | `{duty: "ball"\|"bibs", signupId\|null}` | |
 | `GET /api/v1/balances` | | For `!owe` |
-| `GET /api/v1/suggestions` | | Top 3 kick-off times |
+| `GET /api/v1/suggestions` | | Top 3 kick-off times from usual weeks |
+| `POST /api/v1/pitch-times` | `{text}` | Pitch description → `{times, notes}` (AI) |
+| `POST /api/v1/rank-times` | `{times: ISO[]}` | How many regulars are usually free at each time |
 
 Phase 2 sketch: a small Node process (Baileys / whatsapp-web.js) maps `!newgame` → `POST /games`, `!games` → `GET /games?upcoming=1`, `!owe` → `GET /balances`, forwards free-text messages to `/parse` and then `/availability` (with `x-bot-key` + the sender's phone), and polls `GET /games?upcoming=1` to post reminders 24h/3h before `kickoff` plus payment reminders using `src/lib/whatsapp.ts`.
 

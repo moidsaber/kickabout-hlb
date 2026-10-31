@@ -298,7 +298,7 @@ function Availability({ s, me, reload }: { s: GameState; me: Me; reload: () => P
       </div>
       {msg && <p className="mt-2 text-sm text-emerald-700">{msg}</p>}
 
-      <div className="mt-5 border-t pt-4">
+      <div className="mt-5 border-t border-slate-200 pt-4">
         <label className="mb-1 block text-sm font-medium">Or just tell us when you&apos;re free</label>
         <textarea
           className={`${inputCls} min-h-20 py-2`}

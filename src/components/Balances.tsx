@@ -22,7 +22,7 @@ export function Balances() {
         <p className="text-slate-500">Loading…</p>
       ) : (
         <Card>
-          <ul className="divide-y">
+          <ul className="divide-y divide-slate-200">
             {rows.map((r) => (
               <li key={r.playerId} className="py-2">
                 <details>

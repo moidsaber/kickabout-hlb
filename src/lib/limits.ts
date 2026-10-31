@@ -5,3 +5,6 @@ export const MAX_TEXT = 200;
 
 export const OFF_TOPIC_MESSAGE =
   "That box is only for when you can play, e.g. “weekday evenings, not Friday”. Or just tick the slots.";
+
+export const OFF_TOPIC_PITCH_MESSAGE =
+  "That box is only for when the pitch is free, e.g. “7pm every day except Sunday”. Or use “Tap to pick”.";

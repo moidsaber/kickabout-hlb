@@ -2,10 +2,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, store } from "@/lib/client";
-import { londonToUtc, formatSlot, toLocalInput } from "@/lib/time";
+import { londonToUtc } from "@/lib/time";
+import { KickoffPicker, MAX_SELECTED } from "./KickoffPicker";
 import { Button, Card, CopyButton, ErrorNote, inputCls } from "./ui";
 
-type Suggestion = { local: string; startsAt: string; label: string; available: number };
 type Created = { id: string; adminKey: string; url: string; adminUrl: string };
 
 export function Home() {
@@ -22,7 +22,7 @@ export function Home() {
       {created ? <CreatedCard c={created} onAnother={() => setCreated(null)} /> : <CreateGame onCreated={setCreated} />}
       {games.length > 0 && (
         <Card title="Your games">
-          <ul className="divide-y">
+          <ul className="divide-y divide-slate-200">
             {games.map((g) => (
               <li key={g.id} className="flex items-center justify-between py-2">
                 <Link href={`/g/${g.id}`} className="font-medium text-emerald-700">
@@ -74,12 +74,6 @@ function CreatedCard({ c, onAnother }: { c: Created; onAnother: () => void }) {
   );
 }
 
-function defaultSlot() {
-  // Next weekday at 19:00 London time
-  const d = new Date(Date.now() + 86400_000);
-  return `${toLocalInput(d).slice(0, 10)}T19:00`;
-}
-
 function CreateGame({ onCreated }: { onCreated: (c: Created) => void }) {
   const [title, setTitle] = useState("7-a-side");
   const [location, setLocation] = useState("");
@@ -88,21 +82,12 @@ function CreateGame({ onCreated }: { onCreated: (c: Created) => void }) {
   const [cap, setCap] = useState("14");
   const [monzo, setMonzo] = useState("");
   const [slots, setSlots] = useState<string[]>([]);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setMonzo(store.monzo() || store.me()?.monzoUsername || "");
-    api<{ suggestions: Suggestion[] }>("/api/v1/suggestions")
-      .then((r) => {
-        setSuggestions(r.suggestions);
-        setSlots(r.suggestions.length ? r.suggestions.map((s) => s.local) : [defaultSlot()]);
-      })
-      .catch(() => setSlots([defaultSlot()]));
   }, []);
-
-  const setSlot = (i: number, v: string) => setSlots(slots.map((s, j) => (j === i ? v : s)));
 
   return (
     <Card title="Organise a game">
@@ -112,7 +97,7 @@ function CreateGame({ onCreated }: { onCreated: (c: Created) => void }) {
           e.preventDefault();
           setErr(null);
           const valid = slots.filter(Boolean);
-          if (valid.length < 2 || valid.length > 6) return setErr("Add 2–6 candidate times.");
+          if (valid.length < 1 || valid.length > MAX_SELECTED) return setErr(`Choose 1–${MAX_SELECTED} kick-off times.`);
           setBusy(true);
           try {
             store.setMonzo(monzo);
@@ -163,45 +148,9 @@ function CreateGame({ onCreated }: { onCreated: (c: Created) => void }) {
           <input className={inputCls} value={monzo} onChange={(e) => setMonzo(e.target.value)} placeholder="monzo.me/…" />
         </label>
 
-        <div className="space-y-2">
-          <p className="text-sm text-slate-600">Candidate kick-off times (2–6, UK time)</p>
-          {suggestions.length > 0 && (
-            <div className="rounded-xl bg-emerald-50 p-2 text-sm">
-              <p className="mb-1 text-emerald-900">💡 Best times from everyone&apos;s usual week:</p>
-              <div className="flex flex-wrap gap-2">
-                {suggestions.map((s) => {
-                  const added = slots.includes(s.local);
-                  return (
-                    <button
-                      type="button"
-                      key={s.local}
-                      disabled={added || slots.length >= 6}
-                      onClick={() => setSlots([...slots.filter(Boolean), s.local])}
-                      className={`rounded-full px-3 py-1 ring-1 ${added ? "bg-emerald-600 text-white ring-emerald-600" : "bg-white ring-emerald-300"}`}
-                    >
-                      {formatSlot(s.startsAt)} · {s.available} free {added ? "✓" : "+"}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          {slots.map((s, i) => (
-            <div key={i} className="flex gap-2">
-              <input type="datetime-local" className={inputCls} value={s} step={900} onChange={(e) => setSlot(i, e.target.value)} />
-              <Button variant="secondary" onClick={() => setSlots(slots.filter((_, j) => j !== i))}>
-                ✕
-              </Button>
-            </div>
-          ))}
-          {slots.length < 6 && (
-            <Button variant="ghost" onClick={() => setSlots([...slots, slots[slots.length - 1] ?? defaultSlot()])}>
-              + Add a time
-            </Button>
-          )}
-        </div>
+        <KickoffPicker selected={slots} onChange={setSlots} />
         <Button type="submit" className="w-full" disabled={busy}>
-          {busy ? "Creating…" : "Create game & get link"}
+          {busy ? "Creating…" : `Create game with ${slots.length} time${slots.length === 1 ? "" : "s"}`}
         </Button>
         <ErrorNote error={err} />
       </form>
