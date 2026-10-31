@@ -90,6 +90,7 @@ function CreateGame({ onCreated }: { onCreated: (c: Created) => void }) {
   const [slots, setSlots] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setMonzo(store.monzo() || store.me()?.monzoUsername || "");
@@ -112,6 +113,7 @@ function CreateGame({ onCreated }: { onCreated: (c: Created) => void }) {
           setErr(null);
           const valid = slots.filter(Boolean);
           if (valid.length < 2 || valid.length > 6) return setErr("Add 2–6 candidate times.");
+          setBusy(true);
           try {
             store.setMonzo(monzo);
             const r = await api<Created>("/api/v1/games", {
@@ -129,6 +131,8 @@ function CreateGame({ onCreated }: { onCreated: (c: Created) => void }) {
             onCreated(r);
           } catch (e) {
             setErr((e as Error).message);
+          } finally {
+            setBusy(false);
           }
         }}
       >
@@ -196,8 +200,8 @@ function CreateGame({ onCreated }: { onCreated: (c: Created) => void }) {
             </Button>
           )}
         </div>
-        <Button type="submit" className="w-full">
-          Create game &amp; get link
+        <Button type="submit" className="w-full" disabled={busy}>
+          {busy ? "Creating…" : "Create game & get link"}
         </Button>
         <ErrorNote error={err} />
       </form>
