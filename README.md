@@ -82,7 +82,13 @@ tests/**                vitest
 - **slots**: candidate kick-off times (timestamptz). **availability**: player × slot yes/no.
 - **signups**: one per player (or guest, with `added_by` = host) per game. `created_at` orders responses; `queued_at` is the frozen queue position after confirmation; `dropped_at` / `dropped_while_in` drive promotion and the late-dropout rule.
 - **payments**: amounts paid per player per game. Charges are *computed* from the lineup, so balances = Σ charges − Σ payments across confirmed games.
-- **events**: activity feed ("bumped up from the waitlist", "dropped out", …). **ai_requests**: parser rate limiting (10/player/hour).
+- **events**: activity feed ("bumped up from the waitlist", "dropped out", …). **ai_requests**: parser rate limiting.
+
+### Abuse protection for the "tell us when you're free" box
+1. **Max 200 characters**, enforced in the text box (with a counter) and again on the server.
+2. **Free keyword pre-check** (`looksLikeAvailability` in `src/lib/parse-core.ts`): text that mentions no day, time or availability word ("write me a poem", "lol") is rejected before any AI call. It costs nothing and doesn't count against rate limits.
+3. **AI on-topic verdict**: the model returns `onTopic`. Anything that isn't purely about availability (requests, questions, instructions, attempts to change its rules) comes back `false`, and the server rejects it without filling any ticks. The player's text is treated strictly as data.
+4. **Rate limits**: 10 per player per hour, 30 per network (IP) per hour, and 300 per day across the whole app as a cost backstop. Set a monthly spend limit in the Anthropic console too.
 
 ## JSON API (for the phase-2 WhatsApp bot)
 

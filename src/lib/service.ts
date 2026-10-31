@@ -567,14 +567,23 @@ export async function kickoffSuggestions() {
   return suggestKickoffs(rows.map((r) => r.weekly), new Date());
 }
 
-export async function checkRateLimit(key: string, limit = 10) {
+export type RateRule = { key: string; limit: number; windowMinutes: number; label: string };
+
+/**
+ * Checks every rule; if all pass, records one request against each key.
+ * Returns the first rule that was exceeded, or null if the request is allowed.
+ */
+export async function checkRateLimits(rules: RateRule[]): Promise<RateRule | null> {
   const sql = db();
-  const [{ n }] = await sql<{ n: number }[]>`
-    select count(*)::int as n from ai_requests where key = ${key} and created_at > now() - interval '1 hour'`;
-  if (n >= limit) return false;
-  await sql`insert into ai_requests (key) values (${key})`;
-  if (Math.random() < 0.02) await sql`delete from ai_requests where created_at < now() - interval '1 day'`;
-  return true;
+  for (const r of rules) {
+    const [{ n }] = await sql<{ n: number }[]>`
+      select count(*)::int as n from ai_requests
+      where key = ${r.key} and created_at > now() - make_interval(mins => ${r.windowMinutes})`;
+    if (n >= r.limit) return r;
+  }
+  for (const r of rules) await sql`insert into ai_requests (key) values (${r.key})`;
+  if (Math.random() < 0.02) await sql`delete from ai_requests where created_at < now() - interval '2 days'`;
+  return null;
 }
 
 export async function slotsForGame(gameId: string) {

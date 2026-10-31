@@ -6,6 +6,7 @@ import type { GameState } from "@/lib/service";
 import { gbp, monzoLink, weeklyCovers, type WeeklyWindow } from "@/lib/logic";
 import { DAY_LABEL, formatSlot, type Day } from "@/lib/time";
 import { Button, Card, ErrorNote, inputCls } from "./ui";
+import { MAX_TEXT } from "@/lib/limits";
 import { NameForm } from "./NameForm";
 
 type Parsed = {
@@ -209,6 +210,11 @@ function Availability({ s, me, reload }: { s: GameState; me: Me; reload: () => P
     try {
       const r = await api<{ ok: boolean; result?: Parsed; message?: string }>("/api/v1/parse", { body: { gameId: s.game.id, text } });
       if (!r.ok || !r.result) {
+        // Off-topic or unavailable: don't touch the ticks, undo any earlier AI fill
+        if (parsed) {
+          setParsed(null);
+          setTicks(initial.ticks);
+        }
         setErr(r.message ?? "Couldn't read that — please tick the slots.");
         return;
       }
@@ -298,10 +304,13 @@ function Availability({ s, me, reload }: { s: GameState; me: Me; reload: () => P
           className={`${inputCls} min-h-20 py-2`}
           placeholder="e.g. weekday evenings, all day Saturday, not Sunday"
           value={text}
-          maxLength={500}
-          onChange={(e) => setText(e.target.value)}
+          maxLength={MAX_TEXT}
+          onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT))}
         />
-        <Button variant="secondary" className="mt-2 w-full" disabled={!text.trim()} onClick={parse}>
+        <p className={`text-right text-xs ${text.length >= MAX_TEXT ? "text-rose-600" : "text-slate-400"}`}>
+          {text.length}/{MAX_TEXT}
+        </p>
+        <Button variant="secondary" className="mt-1 w-full" disabled={!text.trim()} onClick={parse}>
           Fill in my ticks
         </Button>
       </div>

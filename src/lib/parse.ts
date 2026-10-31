@@ -21,7 +21,7 @@ export async function parseAvailability(input: {
   const anthropic = input.anthropic ?? getClient();
   const res = await anthropic.messages.parse({
     model: PARSE_MODEL,
-    max_tokens: 4000,
+    max_tokens: 2000, // short structured answer; also caps the cost of any single request
     system,
     messages: [{ role: "user", content: user }],
     output_config: { effort: "low", format: zodOutputFormat(ParsedAvailability) },
