@@ -12,13 +12,19 @@ import { GameHeader, useGame } from "./GameView";
 export function AdminView({ id, adminKey }: { id: string; adminKey: string }) {
   const { state: s, error, reload } = useGame(id, adminKey);
   const [origin, setOrigin] = useState("");
+  const [actionErr, setActionErr] = useState<string | null>(null);
   useEffect(() => setOrigin(window.location.origin), []);
   if (error && !s) return <p className="p-4 text-rose-700">{error}</p>;
   if (!s) return <p className="p-4 text-slate-500">Loading…</p>;
   if (!s.isAdmin) return <p className="p-4 text-rose-700">This admin link isn&apos;t valid.</p>;
   const url = `${origin}/g/${id}`;
   const post = async (path: string, body: unknown) => {
-    await api(`/api/v1/games/${id}/${path}`, { body, adminKey });
+    setActionErr(null);
+    try {
+      await api(`/api/v1/games/${id}/${path}`, { body, adminKey });
+    } catch (e) {
+      setActionErr((e as Error).message);
+    }
     await reload();
   };
 
@@ -28,6 +34,11 @@ export function AdminView({ id, adminKey }: { id: string; adminKey: string }) {
         🔑 Organiser view — keep this link to yourself. <Link href={`/g/${id}`} className="underline">Player view</Link>
       </div>
       <GameHeader s={s} />
+      {actionErr && (
+        <div className="sticky top-2 z-10">
+          <ErrorNote error={actionErr} />
+        </div>
+      )}
 
       <Card title="Share">
         <p className="mb-2 break-all rounded-lg bg-slate-50 p-2 text-sm">{url}</p>

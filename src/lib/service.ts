@@ -167,22 +167,37 @@ export async function createGame(input: CreateGameInput, creator: PlayerRow | nu
   return { id, adminKey };
 }
 
-async function loadGame(id: string) {
+/**
+ * Load several games with a fixed 4 queries, however many games there are
+ * (fewer round trips to a remote database, no burst of parallel queries).
+ */
+async function loadGames(ids: string[]) {
+  if (!ids.length) return [];
   const sql = db();
-  const [game] = await sql<GameRow[]>`select * from games where id = ${id}`;
-  if (!game) throw new HttpError(404, "Game not found");
+  const games = await sql<GameRow[]>`select * from games where id = any(${ids})`;
   const [slots, signups, avail] = await Promise.all([
-    sql<SlotRow[]>`select * from slots where game_id = ${id} order by starts_at`,
+    sql<SlotRow[]>`select * from slots where game_id = any(${ids}) order by starts_at`,
     sql<SignupRow[]>`
       select s.*, p.name as player_name, p.skill as player_skill, p.phone, h.name as host_name
       from signups s
       left join players p on p.id = s.player_id
       left join players h on h.id = s.added_by
-      where s.game_id = ${id} order by s.created_at`,
-    sql<{ slot_id: string; player_id: string }[]>`
-      select slot_id, player_id from availability where game_id = ${id} and available`,
+      where s.game_id = any(${ids}) order by s.created_at`,
+    sql<{ game_id: string; slot_id: string; player_id: string }[]>`
+      select game_id, slot_id, player_id from availability where game_id = any(${ids}) and available`,
   ]);
-  return { game, slots, signups, avail };
+  return games.map((game) => ({
+    game,
+    slots: slots.filter((x) => x.game_id === game.id),
+    signups: signups.filter((x) => x.game_id === game.id),
+    avail: avail.filter((x) => x.game_id === game.id),
+  }));
+}
+
+async function loadGame(id: string) {
+  const [data] = await loadGames([id]);
+  if (!data) throw new HttpError(404, "Game not found");
+  return data;
 }
 
 const toLite = (s: SignupRow): SignupLite => ({
@@ -225,7 +240,7 @@ export async function ledger() {
   const sql = db();
   const games = await sql<{ id: string }[]>`select id from games where status = 'confirmed'`;
   const perGame = new Map<string, Map<string, number>>(); // gameId -> payer -> charged
-  const datas = await Promise.all(games.map((g) => loadGame(g.id)));
+  const datas = await loadGames(games.map((g) => g.id));
   const meta = new Map<string, { title: string; monzo: string | null; kickoff: Date | undefined }>();
   for (const d of datas) {
     const c = compute(d);
@@ -465,15 +480,15 @@ export async function confirmSlot(gameId: string, slotId: string) {
   const slot = data.slots.find((s) => s.id === slotId);
   if (!slot) throw new HttpError(400, "Unknown slot");
   const availSet: AvailSet = new Set(data.avail.map((a) => `${a.slot_id}:${a.player_id}`));
-  await sql.begin(async (tx) => {
-    await tx`update games set status = 'confirmed', confirmed_slot_id = ${slotId} where id = ${gameId}`;
-    await tx`update signups set queued_at = null where game_id = ${gameId}`;
-    for (const s of data.signups) {
-      if (!s.dropped_at && isAvailable(toLite(s), slotId, availSet)) {
-        await tx`update signups set queued_at = created_at where id = ${s.id}`;
-      }
-    }
-  });
+  const queued = data.signups.filter((s) => !s.dropped_at && isAvailable(toLite(s), slotId, availSet)).map((s) => s.id);
+  // One statement: confirm the game and set the queue in a single atomic step
+  await sql`
+    with confirmed as (
+      update games set status = 'confirmed', confirmed_slot_id = ${slotId} where id = ${gameId}
+    )
+    update signups
+    set queued_at = case when id = any(${queued}::uuid[]) then created_at else null end
+    where game_id = ${gameId}`;
   await logEvent(gameId, "confirmed", `✅ Confirmed for ${formatSlot(slot.starts_at)}`);
 }
 

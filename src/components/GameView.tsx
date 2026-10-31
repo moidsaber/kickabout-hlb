@@ -208,7 +208,7 @@ function Availability({ s, me, reload }: { s: GameState; me: Me; reload: () => P
     setErr(null);
     setMsg(null);
     try {
-      const r = await api<{ ok: boolean; result?: Parsed; message?: string }>("/api/v1/parse", { body: { gameId: s.game.id, text } });
+      const r = await api<{ ok: boolean; result?: Parsed; message?: string }>("/api/v1/parse", { body: { gameId: s.game.id, text }, timeoutMs: 55_000 });
       if (!r.ok || !r.result) {
         // Off-topic or unavailable: don't touch the ticks, undo any earlier AI fill
         if (parsed) {

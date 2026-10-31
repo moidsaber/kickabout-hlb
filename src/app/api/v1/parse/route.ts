@@ -38,4 +38,4 @@ export const POST = handle(async (req) => {
     console.error("parse failed", e);
     return { ok: false, fallback: true, message: "Couldn't read that right now — please tick the slots instead." };
   }
-});
+}, { timeoutMs: 50_000 }); // AI calls can take a while on games with many times

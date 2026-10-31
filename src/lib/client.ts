@@ -60,19 +60,36 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T = unknown>(path: string, opts: { method?: string; body?: unknown; adminKey?: string | null } = {}): Promise<T> {
+export async function api<T = unknown>(
+  path: string,
+  opts: { method?: string; body?: unknown; adminKey?: string | null; timeoutMs?: number } = {},
+): Promise<T> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   const token = store.token();
   if (token) headers["x-player-token"] = token;
   if (opts.adminKey) headers["x-admin-key"] = opts.adminKey;
   const organiser = store.organiserCode();
   if (organiser) headers["x-organiser-code"] = organiser;
-  const res = await fetch(path, {
-    method: opts.method ?? (opts.body ? "POST" : "GET"),
-    headers,
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-    cache: "no-store",
-  });
+  // Never spin forever: give up with a clear message
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 30_000);
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: opts.method ?? (opts.body ? "POST" : "GET"),
+      headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      cache: "no-store",
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    throw new ApiError(
+      (e as Error).name === "AbortError" ? "This is taking too long — check your connection and try again." : "Couldn't reach the server — check your connection.",
+      0,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError((data as { error?: string }).error ?? `Request failed (${res.status})`, res.status);
   return data as T;

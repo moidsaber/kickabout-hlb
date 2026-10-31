@@ -118,6 +118,7 @@ export function KickoffPicker({ selected, onChange }: { selected: string[]; onCh
     try {
       const r = await api<{ ok: boolean; times?: Cand[]; notes?: string; truncated?: boolean; message?: string }>("/api/v1/pitch-times", {
         body: { text },
+        timeoutMs: 55_000,
       });
       if (!r.ok || !r.times) {
         setAi(null);

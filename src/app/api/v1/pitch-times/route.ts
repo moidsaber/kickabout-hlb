@@ -32,4 +32,4 @@ export const POST = handle(async (req) => {
     console.error("pitch parse failed", e);
     return { ok: false, fallback: true, message: "Couldn't read that right now — use “Tap to pick” instead." };
   }
-});
+}, { timeoutMs: 50_000 }); // AI calls can take a while on games with many times

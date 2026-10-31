@@ -5,16 +5,28 @@ import { HttpError, playerByPhone, playerByToken, recentHits, recordHit } from "
 
 export type Ctx = { params: Promise<{ id: string }> };
 
-/** Wrap a handler: JSON errors, no caching. */
-export function handle<C>(fn: (req: NextRequest, ctx: C) => Promise<unknown>) {
+const REQUEST_TIMEOUT_MS = 25_000;
+
+/** Wrap a handler: JSON errors, no caching, and a time limit so nothing hangs forever. */
+export function handle<C>(fn: (req: NextRequest, ctx: C) => Promise<unknown>, opts: { timeoutMs?: number } = {}) {
+  const limit = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
   return async (req: NextRequest, ctx: C) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const data = await fn(req, ctx);
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          console.error(`Timed out after ${limit / 1000}s: ${req.method} ${req.nextUrl.pathname}`);
+          reject(new HttpError(504, "The server took too long to respond — please try again."));
+        }, limit);
+      });
+      const data = await Promise.race([fn(req, ctx), timeout]);
       return Response.json(data ?? { ok: true }, { headers: { "cache-control": "no-store" } });
     } catch (e) {
       if (e instanceof HttpError) return Response.json({ error: e.message }, { status: e.status });
       console.error(e);
       return Response.json({ error: "Something went wrong" }, { status: 500 });
+    } finally {
+      clearTimeout(timer);
     }
   };
 }
