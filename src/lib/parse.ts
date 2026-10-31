@@ -9,7 +9,7 @@ export const PARSE_MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-5-5";
 let client: Anthropic | null = null;
 function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set");
-  return (client ??= new Anthropic({ timeout: 20_000, maxRetries: 1 }));
+  return (client ??= new Anthropic({ timeout: 45_000, maxRetries: 1 })); // games with many times take longer
 }
 
 export async function parseAvailability(input: {
@@ -22,7 +22,8 @@ export async function parseAvailability(input: {
   const anthropic = input.anthropic ?? getClient();
   const res = await anthropic.messages.parse({
     model: PARSE_MODEL,
-    max_tokens: 2000, // short structured answer; also caps the cost of any single request
+    // The answer lists every slot, so allow room for games with many times (still capped)
+    max_tokens: Math.min(12_000, 2_000 + input.slots.length * 60),
     system,
     messages: [{ role: "user", content: user }],
     output_config: { effort: "low", format: zodOutputFormat(ParsedAvailability) },

@@ -13,8 +13,8 @@ import { Button, ErrorNote, inputCls } from "./ui";
 type Cand = { local: string; startsAt: string };
 type Mode = "pick" | "describe";
 type Weeks = 1 | 2 | 4;
-export const MAX_SELECTED = 6;
 const COLLAPSED_ROWS = 10;
+const chipCls = "rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200";
 const PREFS_KEY = "kick.pitch";
 const uniq = (xs: string[]) => [...new Set(xs)];
 
@@ -105,12 +105,12 @@ export function KickoffPicker({ selected, onChange }: { selected: string[]; onCh
 
   const toggle = (local: string) => {
     if (selected.includes(local)) onChange(selected.filter((s) => s !== local));
-    else if (selected.length < MAX_SELECTED) onChange([...selected, local]);
+    else onChange([...selected, local]);
   };
 
   const tickPopular = () => {
     const best = pickBest(cands.map((c) => ({ ...c, available: scores[c.local] ?? 0 })), 3);
-    onChange(uniq([...best, ...extras.filter((x) => selected.includes(x))]).slice(0, MAX_SELECTED));
+    onChange(uniq([...best, ...extras.filter((x) => selected.includes(x))]));
   };
 
   const findTimes = async () => {
@@ -134,6 +134,9 @@ export function KickoffPicker({ selected, onChange }: { selected: string[]; onCh
     ...cands,
     ...extras.filter((x) => !cands.some((c) => c.local === x)).map((local) => ({ local, startsAt: londonToUtc(local).toISOString() })),
   ].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const allTicked = list.length > 0 && list.every((c) => selected.includes(c.local));
+  const selectAll = () => onChange(uniq([...selected, ...list.map((c) => c.local)]));
+  const clearAll = () => onChange([]);
   // Collapsed view: first rows, plus anything already ticked further down
   const visible = showAll ? list : list.filter((c, i) => i < COLLAPSED_ROWS || selected.includes(c.local));
 
@@ -249,10 +252,15 @@ export function KickoffPicker({ selected, onChange }: { selected: string[]; onCh
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-slate-500">
-              {list.length} possible time{list.length === 1 ? "" : "s"} · <strong className="text-slate-700">{selected.length}</strong> of up to {MAX_SELECTED} chosen
+              {list.length} possible time{list.length === 1 ? "" : "s"} · <strong className="text-slate-700">{selected.length}</strong> chosen
             </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={allTicked ? clearAll : selectAll} className={chipCls}>
+              {allTicked ? "Clear all" : `Select all ${list.length}`}
+            </button>
             {regulars > 0 && (
-              <button type="button" onClick={tickPopular} className="shrink-0 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200">
+              <button type="button" onClick={tickPopular} className={chipCls}>
                 ✨ Tick the 3 most popular
               </button>
             )}
@@ -267,8 +275,7 @@ export function KickoffPicker({ selected, onChange }: { selected: string[]; onCh
                     type="button"
                     aria-pressed={on}
                     onClick={() => toggle(c.local)}
-                    disabled={!on && selected.length >= MAX_SELECTED}
-                    className="flex flex-1 items-center gap-3 text-left disabled:opacity-40"
+                    className="flex flex-1 items-center gap-3 text-left"
                   >
                     <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sm ${on ? "bg-emerald-600 text-white" : "ring-1 ring-slate-300"}`}>
                       {on ? "✓" : ""}
@@ -313,7 +320,7 @@ export function KickoffPicker({ selected, onChange }: { selected: string[]; onCh
           <input type="datetime-local" step={900} className={inputCls} value={extraInput} onChange={(e) => setExtraInput(e.target.value)} />
           <Button
             variant="secondary"
-            disabled={!extraInput || selected.length >= MAX_SELECTED}
+            disabled={!extraInput}
             onClick={() => {
               setExtras(uniq([...extras, extraInput]));
               onChange(uniq([...selected, extraInput]));

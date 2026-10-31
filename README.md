@@ -6,7 +6,7 @@ Organise casual 7-a-side games for a loose group of friends: pick a time, fill t
 
 ## How it works
 
-1. **Organiser creates a game** on `/`: title, location + Google Maps link, pitch cost, cap (default 14), and 1–6 candidate kick-off times, chosen in one of two ways:
+1. **Organiser creates a game** on `/`: title, location + Google Maps link, pitch cost, cap (default 14), and as many candidate kick-off times as they like, chosen in one of two ways:
    - **Tap to pick:** weekday chips, a range (next 1, 2 or 4 weeks) and one or more kick-off times. No AI involved.
    - **Describe it:** e.g. *"p rec pitch is available at 7pm every day except Sunday"*. Claude returns a compact pattern (date range, weekly times, one-off dates, exclusions) that the app expands into concrete times. It covers the next 30 days by default, and "next month", "next 2 weeks" etc. work too. Same abuse protection as the players' box.
    Nothing is ticked automatically. Each time shows how many recent regulars are usually free, and **✨ Tick the 3 most popular** ticks the best ones on request. The host can also add a specific date and time. The picker remembers how the host last described the pitch.

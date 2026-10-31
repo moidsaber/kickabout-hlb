@@ -13,6 +13,7 @@ import {
   type WeeklyWindow,
 } from "./logic";
 import { formatSlot } from "./time";
+import { MAX_SLOTS } from "./limits";
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) {
@@ -142,7 +143,7 @@ export async function createGame(input: CreateGameInput, creator: PlayerRow | nu
   const sql = db();
   const slots = [...new Set(input.slots)].map((s) => new Date(s)).filter((d) => !isNaN(d.getTime()));
   if (!input.title?.trim()) throw new HttpError(400, "Title required");
-  if (slots.length < 1 || slots.length > 6) throw new HttpError(400, "Give between 1 and 6 time slots");
+  if (slots.length < 1 || slots.length > MAX_SLOTS) throw new HttpError(400, `Give between 1 and ${MAX_SLOTS} time slots`);
   if (!(input.costPence >= 0)) throw new HttpError(400, "Cost required");
   const id = gameId();
   const adminKey = nanoid(24);

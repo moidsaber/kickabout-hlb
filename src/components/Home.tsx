@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ApiError, api, store } from "@/lib/client";
 import { londonToUtc } from "@/lib/time";
-import { KickoffPicker, MAX_SELECTED } from "./KickoffPicker";
+import { KickoffPicker } from "./KickoffPicker";
 import { Button, Card, CopyButton, ErrorNote, inputCls } from "./ui";
 
 type Created = { id: string; adminKey: string; url: string; adminUrl: string };
@@ -171,7 +171,7 @@ function CreateGame({ onCreated, onLocked }: { onCreated: (c: Created) => void; 
           e.preventDefault();
           setErr(null);
           const valid = slots.filter(Boolean);
-          if (valid.length < 1 || valid.length > MAX_SELECTED) return setErr(`Choose 1–${MAX_SELECTED} kick-off times.`);
+          if (valid.length < 1) return setErr("Tick at least one kick-off time.");
           setBusy(true);
           try {
             store.setMonzo(monzo);
