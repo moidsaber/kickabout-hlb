@@ -63,29 +63,52 @@ function SlotPicker({ s, onConfirm }: { s: GameState; onConfirm: (slotId: string
   const players = s.people.filter((p) => !p.isGuest);
   const guestsByHost = new Map<string, number>();
   s.people.filter((p) => p.isGuest && !p.droppedAt).forEach((g) => guestsByHost.set(g.hostId!, (guestsByHost.get(g.hostId!) ?? 0) + 1));
+  // Every time tied for the most votes counts as "most popular"
+  const top = Math.max(0, ...s.slots.map((sl) => sl.count));
+  const confirmedGame = s.game.status === "confirmed";
+  // Who can make each time: players who ticked it, plus their guests
+  const whoFor = (slotId: string) =>
+    s.people
+      .filter((p) => !p.droppedAt)
+      .filter((p) => s.availability[(p.isGuest ? p.hostId : p.playerId) ?? ""]?.includes(slotId))
+      .map((p) => (p.isGuest ? `${p.name} (${p.hostName}'s mate)` : p.name));
   return (
     <Card title={`Availability (${players.length} responded)`}>
       <div className="space-y-2">
         {s.slots.map((sl) => {
-          const best = sl.id === s.bestSlotId;
+          const popular = top > 0 && sl.count === top;
           const isConfirmed = sl.id === s.game.confirmedSlotId;
+          const names = whoFor(sl.id);
           return (
-            <div key={sl.id} className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 ring-1 ${best ? "bg-emerald-50 ring-emerald-400" : "ring-slate-200"}`}>
-              <div>
+            <div
+              key={sl.id}
+              className={`flex items-start justify-between gap-2 rounded-xl px-3 py-2 ring-1 ${
+                isConfirmed ? "bg-emerald-50 ring-2 ring-emerald-600" : popular ? "bg-emerald-50 ring-emerald-400" : "ring-slate-200"
+              }`}
+            >
+              <div className="min-w-0 flex-1">
                 <p className="font-medium">
-                  {formatSlot(sl.startsAt)} {best && <span className="text-xs text-emerald-700">★ most popular</span>}
+                  {formatSlot(sl.startsAt)} {popular && <span className="text-xs text-emerald-700">★ most popular</span>}
                 </p>
-                <p className="text-sm text-slate-600">
-                  {sl.count} available{sl.count > s.game.cap ? ` (${sl.count - s.game.cap} on waitlist)` : ""}
-                </p>
+                {names.length ? (
+                  <details className="text-sm text-slate-600">
+                    <summary className="cursor-pointer select-none">
+                      {sl.count} available{sl.count > s.game.cap ? ` (${sl.count - s.game.cap} on waitlist)` : ""}
+                    </summary>
+                    <p className="mt-1 text-slate-700">{names.join(", ")}</p>
+                  </details>
+                ) : (
+                  <p className="text-sm text-slate-600">0 available</p>
+                )}
               </div>
               {isConfirmed ? (
-                <span className="rounded-lg bg-emerald-600 px-2 py-1 text-sm text-white">Confirmed</span>
+                <span className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white">Confirmed</span>
               ) : (
                 <Button
-                  variant={best ? "primary" : "secondary"}
+                  // Before confirming, highlight the most popular times; afterwards every other button is grey
+                  variant={!confirmedGame && popular ? "primary" : "secondary"}
                   onClick={async () => {
-                    if (s.game.status === "confirmed" && !confirm("Switch the confirmed time? The lineup will be rebuilt from availability.")) return;
+                    if (confirmedGame && !confirm("Switch the confirmed time? The lineup will be rebuilt from availability.")) return;
                     await onConfirm(sl.id);
                   }}
                 >
