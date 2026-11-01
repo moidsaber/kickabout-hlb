@@ -458,6 +458,35 @@ export async function rejoin(gameId: string, signupId: string, actor: { player?:
   });
 }
 
+/**
+ * Organiser removes someone from a game: their sign-up, ticks and any mates
+ * they added are deleted (the waitlist moves up as usual). If the profile
+ * isn't in any other game and has never paid anything, it's deleted entirely,
+ * which is how fake profiles get cleaned up. Payment records are kept.
+ */
+export async function removePlayerFromGame(gameId: string, playerId: string) {
+  const sql = db();
+  const [player] = await sql<{ name: string }[]>`select name from players where id = ${playerId}`;
+  if (!player) throw new HttpError(404, "Player not found");
+  await withLineupDiff(gameId, async () => {
+    const gone = await sql<{ id: string }[]>`
+      delete from signups where game_id = ${gameId} and (player_id = ${playerId} or added_by = ${playerId}) returning id`;
+    await sql`delete from availability where game_id = ${gameId} and player_id = ${playerId}`;
+    // Clear kit duties held by anyone removed
+    const [g] = await sql<{ kit: Record<string, string> }[]>`select kit from games where id = ${gameId}`;
+    const goneIds = new Set(gone.map((x) => x.id));
+    const kit = Object.fromEntries(Object.entries(g?.kit ?? {}).filter(([, id]) => !goneIds.has(id)));
+    await sql`update games set kit = ${sql.json(kit)} where id = ${gameId}`;
+  });
+  const [{ n }] = await sql<{ n: number }[]>`
+    select ((select count(*) from signups where player_id = ${playerId} or added_by = ${playerId})
+          + (select count(*) from payments where player_id = ${playerId}))::int as n`;
+  const profileDeleted = n === 0;
+  if (profileDeleted) await sql`delete from players where id = ${playerId}`;
+  await logEvent(gameId, "removed", `🗑️ ${player.name} was removed by the organiser`);
+  return { profileDeleted };
+}
+
 export const MAX_GUESTS_PER_PLAYER = 3;
 
 export async function addGuest(gameId: string, host: PlayerRow, guestName: string) {
@@ -615,7 +644,8 @@ export async function checkRateLimits(rules: RateRule[]): Promise<RateRule | nul
     if (n >= r.limit) return r;
   }
   for (const r of rules) await sql`insert into ai_requests (key) values (${r.key})`;
-  if (Math.random() < 0.02) await sql`delete from ai_requests where created_at < now() - interval '2 days'`;
+  // Keep 61 days: per-game allowances count over the life of a game
+  if (Math.random() < 0.02) await sql`delete from ai_requests where created_at < now() - interval '61 days'`;
   return null;
 }
 
@@ -629,6 +659,11 @@ export async function recentHits(key: string, windowMinutes: number) {
 
 export async function recordHit(key: string) {
   await db()`insert into ai_requests (key) values (${key})`;
+}
+
+export async function gameCap(gameId: string) {
+  const [g] = await db()<{ cap: number }[]>`select cap from games where id = ${gameId}`;
+  return g?.cap ?? 14;
 }
 
 export async function slotsForGame(gameId: string) {

@@ -30,7 +30,7 @@ export function AdminView({ id, adminKey }: { id: string; adminKey: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl bg-slate-900 px-3 py-2 text-sm text-white">
+      <div className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-slate-800 ring-1 ring-emerald-200">
         🔑 Organiser view — keep this link to yourself. <Link href={`/g/${id}`} className="underline">Player view</Link>
       </div>
       <GameHeader s={s} />
@@ -50,7 +50,7 @@ export function AdminView({ id, adminKey }: { id: string; adminKey: string }) {
         </div>
       </Card>
 
-      <SlotPicker s={s} onConfirm={(slotId) => post("confirm", { slotId })} />
+      <SlotPicker s={s} onConfirm={(slotId) => post("confirm", { slotId })} onRemove={(playerId) => post("remove", { playerId })} />
       {s.game.status === "confirmed" && <AdminLineup s={s} post={post} />}
       {s.money && <Payments s={s} post={post} />}
       {s.game.status === "confirmed" && <Teams s={s} />}
@@ -59,7 +59,15 @@ export function AdminView({ id, adminKey }: { id: string; adminKey: string }) {
   );
 }
 
-function SlotPicker({ s, onConfirm }: { s: GameState; onConfirm: (slotId: string) => Promise<void> }) {
+function SlotPicker({
+  s,
+  onConfirm,
+  onRemove,
+}: {
+  s: GameState;
+  onConfirm: (slotId: string) => Promise<void>;
+  onRemove: (playerId: string) => Promise<void>;
+}) {
   const players = s.people.filter((p) => !p.isGuest);
   const guestsByHost = new Map<string, number>();
   s.people.filter((p) => p.isGuest && !p.droppedAt).forEach((g) => guestsByHost.set(g.hostId!, (guestsByHost.get(g.hostId!) ?? 0) + 1));
@@ -138,12 +146,33 @@ function SlotPicker({ s, onConfirm }: { s: GameState; onConfirm: (slotId: string
               {players.map((p) => (
                 <tr key={p.id} className="border-t border-slate-100">
                   <td className="py-1 pr-2 whitespace-nowrap">
+                    <button
+                      type="button"
+                      title={`Remove ${p.name}`}
+                      aria-label={`Remove ${p.name}`}
+                      className="mr-1.5 rounded px-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                      onClick={() => {
+                        const mates = guestsByHost.get(p.playerId!) ?? 0;
+                        if (
+                          confirm(
+                            `Remove ${p.name} from this game?\n\nTheir availability${mates ? ` and the ${mates} mate${mates > 1 ? "s" : ""} they added` : ""} will be deleted. If they're not in any other game, their profile is deleted too.`,
+                          )
+                        )
+                          return onRemove(p.playerId!);
+                      }}
+                    >
+                      ✕
+                    </button>
                     {p.name}
                     {guestsByHost.get(p.playerId!) ? <span className="text-slate-400"> +{guestsByHost.get(p.playerId!)}</span> : null}
                   </td>
                   {s.slots.map((sl) => (
                     <td key={sl.id} className="text-center">
-                      {s.availability[p.playerId!]?.includes(sl.id) ? "✅" : "·"}
+                      {s.availability[p.playerId!]?.includes(sl.id) ? (
+                        <span className="inline-block h-4 w-4 rounded bg-emerald-500 align-middle" aria-label="free" />
+                      ) : (
+                        <span className="text-slate-400">·</span>
+                      )}
                     </td>
                   ))}
                 </tr>

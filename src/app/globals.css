@@ -1,5 +1,61 @@
 @import "tailwindcss";
 
+/*
+ * Dark green theme, set in one place. Components use ordinary Tailwind names
+ * (bg-white, text-slate-900, bg-emerald-600 …); here those names are mapped to
+ * the dark palette:
+ *   - white       -> card surface (so text-white on green reads dark-on-bright)
+ *   - slate scale -> inverted: low numbers are dark surfaces, high numbers light text
+ *   - emerald     -> the bright "free" green, with dark tints for highlights
+ *   - rose/amber/sky/orange tints -> dark backgrounds with light text
+ */
+@theme {
+  --color-white: #121c16;
+
+  --color-slate-50: #18241d;
+  --color-slate-100: #0d1511;
+  --color-slate-200: #24322a;
+  --color-slate-300: #34443b;
+  --color-slate-400: #6c7b72;
+  --color-slate-500: #8d9b92;
+  --color-slate-600: #a7b3ab;
+  --color-slate-700: #c5cfc8;
+  --color-slate-800: #dde5df;
+  --color-slate-900: #f1f6f2;
+
+  --color-emerald-50: #11291b;
+  --color-emerald-100: #143421;
+  --color-emerald-200: #1b4d30;
+  --color-emerald-300: #22693f;
+  --color-emerald-400: #2fae62;
+  --color-emerald-500: #3ddc84;
+  --color-emerald-600: #3ddc84;
+  --color-emerald-700: #63e39c;
+  --color-emerald-800: #86eab2;
+  --color-emerald-900: #b0f2cc;
+
+  --color-rose-50: #33151a;
+  --color-rose-100: #451b22;
+  --color-rose-600: #fb7185;
+  --color-rose-700: #fda4af;
+
+  --color-amber-50: #2e240f;
+  --color-amber-200: #5b4515;
+  --color-amber-400: #f5b83d;
+  --color-amber-700: #fbc85c;
+  --color-amber-800: #fcd77f;
+  --color-amber-900: #fde6a8;
+
+  --color-sky-50: #0f2230;
+  --color-sky-200: #1f4560;
+
+  --color-orange-50: #33220f;
+}
+
+:root {
+  color-scheme: dark; /* dark native date/time pickers and scrollbars */
+}
+
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;

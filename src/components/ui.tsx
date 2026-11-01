@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 
 export function Card({ title, children, right }: { title?: ReactNode; children: ReactNode; right?: ReactNode }) {
   return (
-    <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+    <section className="rounded-2xl bg-white p-4 ring-1 ring-slate-200">
       {(title || right) && (
         <div className="mb-3 flex items-center justify-between gap-2">
           {title && <h2 className="text-base font-semibold">{title}</h2>}

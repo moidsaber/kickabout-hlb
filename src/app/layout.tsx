@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: "Pick a time, fill the pitch, split the cost.",
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#059669" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#0d1511" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

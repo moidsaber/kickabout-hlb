@@ -94,13 +94,13 @@ tests/**                vitest
 - The setup helpers (`/pitch-times` AI and `/rank-times`) need the code too, so nobody else can spend AI credit through them.
 - Wrong guesses are limited to 10 per network per hour. The comparison ignores case and extra spaces, and takes the same time whether a guess is close or not.
 - To change the code, update `ORGANISER_CODE` in Vercel and redeploy. Every organiser then re-enters the new one.
-- Other spam limits: 3 guests per player per game, and 30 name sign-ins per network per hour. The organiser can drop anyone from a game, and cancelled games are hidden.
+- Other spam limits: 3 guests per player per game, and 30 name sign-ins per network per hour. The organiser can **remove** anyone from a game (✕ next to their name). This also removes the mates they added, and deletes the profile entirely if it isn't in any other game and has no payments.
 
 ### Abuse protection for the "tell us when you're free" box
 1. **Max 200 characters**, enforced in the text box (with a counter) and again on the server.
 2. **Free keyword pre-check** (`looksLikeAvailability` in `src/lib/parse-core.ts`): text that mentions no day, time or availability word ("write me a poem", "lol") is rejected before any AI call. It costs nothing and doesn't count against rate limits.
 3. **AI on-topic verdict**: the model returns `onTopic`. Anything that isn't purely about availability (requests, questions, instructions, attempts to change its rules) comes back `false`, and the server rejects it without filling any ticks. The player's text is treated strictly as data.
-4. **Rate limits**: 10 per player per hour, 30 per network (IP) per hour, and 300 per day across the whole app as a cost backstop. Set a monthly spend limit in the Anthropic console too.
+4. **Rate limits**: 3 per profile per hour; per game, at most twice the player cap in total (so making extra profiles doesn't help) and 10 per network; and 300 per day across the whole app as a cost backstop. Set a monthly spend limit in the Anthropic console too.
 
 ## JSON API (for the phase-2 WhatsApp bot)
 

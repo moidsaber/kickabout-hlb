@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { api, store, type Me } from "@/lib/client";
 import type { GameState } from "@/lib/service";
@@ -7,6 +7,7 @@ import { gbp, monzoLink, weeklyCovers, type WeeklyWindow } from "@/lib/logic";
 import { DAY_LABEL, formatSlot, type Day } from "@/lib/time";
 import { Button, Card, ErrorNote, inputCls } from "./ui";
 import { MAX_TEXT } from "@/lib/limits";
+import { SlotGrid } from "./SlotGrid";
 import { NameForm } from "./NameForm";
 
 type Parsed = {
@@ -75,7 +76,6 @@ export function GameView({ id }: { id: string }) {
   if (error && !s) return <p className="p-4 text-rose-700">{error}</p>;
   if (!s || !ready) return <p className="p-4 text-slate-500">Loading…</p>;
 
-  const mySignup = me ? s.people.find((p) => p.playerId === me.id) : undefined;
   const confirmed = s.game.status === "confirmed";
 
   return (
@@ -101,7 +101,7 @@ export function GameView({ id }: { id: string }) {
             </button>
           </p>
           {confirmed && <MyStatus s={s} me={me} reload={reload} />}
-          {s.game.status !== "cancelled" && <Availability key={me.id + (mySignup ? "1" : "0")} s={s} me={me} reload={reload} />}
+          {s.game.status !== "cancelled" && <Availability key={me.id} s={s} me={me} reload={reload} />}
           {confirmed && <Payment s={s} me={me} />}
           {s.game.status !== "cancelled" && <Guests s={s} me={me} reload={reload} />}
           {confirmed && <Kit s={s} me={me} reload={reload} />}
@@ -181,13 +181,42 @@ function Availability({ s, me, reload }: { s: GameState; me: Me; reload: () => P
     return { ticks: t, fromWeekly: t.size > 0 };
   }, [responded, s.availability, s.slots, me]);
   const [ticks, setTicks] = useState<Set<string>>(initial.ticks);
+  const ticksRef = useRef(ticks);
+  useEffect(() => {
+    ticksRef.current = ticks;
+  }, [ticks]);
   const [text, setText] = useState("");
   const [parsed, setParsed] = useState<Parsed | null>(null);
   const [saveWeekly, setSaveWeekly] = useState(true);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [err, setErr] = useState<string | null>(null);
+  const [aiErr, setAiErr] = useState<string | null>(null);
   const [open, setOpen] = useState(!responded || s.game.status === "open");
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const lowConf = new Set(parsed?.slots.filter((x) => x.confidence === "low").map((x) => x.slotId) ?? []);
+  // Pre-filled from the usual week (not saved yet) or an AI suggestion: ask before saving
+  const needsConfirm = !!parsed || (initial.fromWeekly && !responded && status === "idle");
+
+  const save = async (opts: { weekly?: WeeklyWindow[] } = {}) => {
+    setErr(null);
+    setStatus("saving");
+    try {
+      await api(`/api/v1/games/${s.game.id}/availability`, { body: { available: [...ticksRef.current], weekly: opts.weekly } });
+      if (opts.weekly) store.updateMe({ weekly: opts.weekly });
+      setStatus("saved");
+      await reload();
+    } catch (e) {
+      setStatus("idle");
+      setErr((e as Error).message);
+    }
+  };
+
+  // Painting saves as you go (unless an AI suggestion is waiting to be confirmed)
+  const onPaintEnd = () => {
+    if (parsed) return;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => save(), 400);
+  };
 
   if (s.game.status === "confirmed" && !open) {
     return (
@@ -197,16 +226,8 @@ function Availability({ s, me, reload }: { s: GameState; me: Me; reload: () => P
     );
   }
 
-  const toggle = (id: string) => {
-    const t = new Set(ticks);
-    if (t.has(id)) t.delete(id);
-    else t.add(id);
-    setTicks(t);
-  };
-
   const parse = async () => {
-    setErr(null);
-    setMsg(null);
+    setAiErr(null);
     try {
       const r = await api<{ ok: boolean; result?: Parsed; message?: string }>("/api/v1/parse", { body: { gameId: s.game.id, text }, timeoutMs: 55_000 });
       if (!r.ok || !r.result) {
@@ -215,105 +236,97 @@ function Availability({ s, me, reload }: { s: GameState; me: Me; reload: () => P
           setParsed(null);
           setTicks(initial.ticks);
         }
-        setErr(r.message ?? "Couldn't read that — please tick the slots.");
+        setAiErr(r.message ?? "Couldn't read that — please paint your times below.");
         return;
       }
       setParsed(r.result);
       setTicks(new Set(r.result.slots.filter((x) => x.available).map((x) => x.slotId)));
       setSaveWeekly(r.result.weekly.length > 0);
     } catch (e) {
-      setErr((e as Error).message + " — please tick the slots instead.");
+      setAiErr((e as Error).message + " — please paint your times below.");
     }
   };
 
-  const save = async () => {
-    setErr(null);
-    try {
-      const weekly = parsed && saveWeekly && parsed.weekly.length ? parsed.weekly : undefined;
-      await api(`/api/v1/games/${s.game.id}/availability`, { body: { available: [...ticks], weekly } });
-      if (weekly) store.updateMe({ weekly });
-      setParsed(null);
-      setText("");
-      setMsg("Saved ✓");
-      await reload();
-    } catch (e) {
-      setErr((e as Error).message);
-    }
+  const confirmAi = async () => {
+    const weekly = parsed && saveWeekly && parsed.weekly.length ? parsed.weekly : undefined;
+    await save({ weekly });
+    setParsed(null);
+    setText("");
   };
 
   return (
     <Card title="When can you play?">
-      {initial.fromWeekly && !parsed && <p className="mb-2 text-sm text-slate-500">Pre-ticked from your usual week — change anything that&apos;s different.</p>}
       <div className="space-y-2">
-        {s.slots.map((sl) => {
-          const on = ticks.has(sl.id);
-          const low = lowConf.has(sl.id);
-          const isConfirmed = s.game.confirmedSlotId === sl.id;
-          return (
-            <button
-              key={sl.id}
-              onClick={() => toggle(sl.id)}
-              className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left ring-1 transition ${
-                on ? "bg-emerald-50 ring-emerald-400" : "bg-white ring-slate-200"
-              } ${low ? "outline-2 outline-dashed outline-amber-400" : ""}`}
-            >
-              <span>
-                <span className="font-medium">{formatSlot(sl.startsAt)}</span>
-                {isConfirmed && <span className="ml-2 rounded bg-emerald-600 px-1.5 py-0.5 text-xs text-white">confirmed</span>}
-                {low && <span className="ml-2 text-xs text-amber-700">check this</span>}
-                <span className="block text-xs text-slate-500">{sl.count} available</span>
-              </span>
-              <span className={`flex h-7 w-7 items-center justify-center rounded-full text-lg ${on ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-400"}`}>
-                {on ? "✓" : ""}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {parsed && (
-        <div className="mt-3 space-y-2 rounded-xl bg-sky-50 p-3 text-sm ring-1 ring-sky-200">
-          <p>🤖 {parsed.notes}</p>
-          {lowConf.size > 0 && <p className="text-amber-800">Slots with a dashed outline were a guess — please check them.</p>}
-          {parsed.weekly.length > 0 && (
-            <label className="flex items-start gap-2">
-              <input type="checkbox" className="mt-1" checked={saveWeekly} onChange={(e) => setSaveWeekly(e.target.checked)} />
-              <span>
-                Remember as my usual week: <WeeklySummary weekly={parsed.weekly} />
-              </span>
-            </label>
-          )}
-        </div>
-      )}
-
-      <div className="mt-3 flex items-center gap-3">
-        <Button onClick={save} className="flex-1">
-          {parsed ? "Looks right — save" : "Save"}
-        </Button>
-        {parsed && (
-          <Button variant="secondary" onClick={() => { setParsed(null); setTicks(initial.ticks); }}>
-            Undo
-          </Button>
-        )}
-      </div>
-      {msg && <p className="mt-2 text-sm text-emerald-700">{msg}</p>}
-
-      <div className="mt-5 border-t border-slate-200 pt-4">
-        <label className="mb-1 block text-sm font-medium">Or just tell us when you&apos;re free</label>
+        <label className="block text-sm font-medium">Tell us when you&apos;re free</label>
         <textarea
-          className={`${inputCls} min-h-20 py-2`}
+          className={`${inputCls} min-h-16 py-2`}
           placeholder="e.g. weekday evenings, all day Saturday, not Sunday"
           value={text}
           maxLength={MAX_TEXT}
           onChange={(e) => setText(e.target.value.slice(0, MAX_TEXT))}
         />
-        <p className={`text-right text-xs ${text.length >= MAX_TEXT ? "text-rose-600" : "text-slate-400"}`}>
-          {text.length}/{MAX_TEXT}
-        </p>
-        <Button variant="secondary" className="mt-1 w-full" disabled={!text.trim()} onClick={parse}>
-          Fill in my ticks
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <span>3 tries an hour</span>
+          <span className={text.length >= MAX_TEXT ? "text-rose-600" : ""}>
+            {text.length}/{MAX_TEXT}
+          </span>
+        </div>
+        <Button variant="secondary" className="w-full" disabled={!text.trim()} onClick={parse}>
+          Fill in my times
         </Button>
+        <ErrorNote error={aiErr} />
+        {parsed && (
+          <div className="space-y-2 rounded-xl bg-sky-50 p-3 text-sm ring-1 ring-sky-200">
+            <p>🤖 {parsed.notes}</p>
+            {lowConf.size > 0 && <p className="text-amber-800">Times with a dashed outline were a guess — please check them.</p>}
+            {parsed.weekly.length > 0 && (
+              <label className="flex items-start gap-2">
+                <input type="checkbox" className="mt-1" checked={saveWeekly} onChange={(e) => setSaveWeekly(e.target.checked)} />
+                <span>
+                  Remember as my usual week: <WeeklySummary weekly={parsed.weekly} />
+                </span>
+              </label>
+            )}
+          </div>
+        )}
       </div>
+
+      <div className="mt-5 border-t border-slate-200 pt-4">
+        <div className="mb-3 flex items-baseline justify-between gap-2">
+          <p className="text-sm text-slate-600">
+            {initial.fromWeekly && !responded && !parsed ? "Pre-filled from your usual week. " : ""}
+            Tap or drag to paint when you&apos;re free.
+          </p>
+          <span className="shrink-0 text-xs text-slate-500">{status === "saving" ? "Saving…" : status === "saved" && !parsed ? "Saved ✓" : ""}</span>
+        </div>
+        <SlotGrid
+          slots={s.slots}
+          ticks={ticks}
+          onChange={setTicks}
+          onPaintEnd={needsConfirm && !parsed ? undefined : onPaintEnd}
+          lowConf={lowConf}
+          confirmedId={s.game.confirmedSlotId}
+        />
+      </div>
+
+      {needsConfirm && (
+        <div className="mt-3 flex items-center gap-3">
+          <Button onClick={parsed ? confirmAi : () => save()} className="flex-1">
+            {parsed ? "Looks right — save" : "Save"}
+          </Button>
+          {parsed && (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setParsed(null);
+                setTicks(initial.ticks);
+              }}
+            >
+              Undo
+            </Button>
+          )}
+        </div>
+      )}
       <div className="mt-2">
         <ErrorNote error={err} />
       </div>
@@ -345,7 +358,7 @@ function Payment({ s, me }: { s: GameState; me: Me }) {
           {monzo ? (
             <a
               href={monzoLink(monzo, row.total, s.game.title)}
-              className="flex min-h-12 items-center justify-center rounded-xl bg-[#ff4f40] font-semibold text-white"
+              className="flex min-h-12 items-center justify-center rounded-xl bg-[#ff4f40] font-semibold text-[#ffffff]"
               target="_blank"
               rel="noreferrer"
             >
